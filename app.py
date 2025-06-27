@@ -1,59 +1,42 @@
-from flask import Flask, render_template, request, redirect, url_for
-from scanner import scan_website, vulnerability_explanations
-import validators
+from flask import Flask, request, jsonify
+import torch
+from PIL import Image
+from model import get_model
+from torchvision import transforms
+import io
 
 app = Flask(__name__)
 
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    result = {}
-    error = None
-    url = None
-    has_vulnerability = False  # Flag for red box
-    no_vulnerability = True    # Flag for green box (default to true)
+# Load the model
+model = get_model(num_classes=38)  # Match your actual classes
+model.load_state_dict(torch.load("model.pth", map_location="cpu"))
+model.eval()
 
-    if request.method == 'POST':
-        url = request.form.get('url')
+# Image preprocessing
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.Grayscale(),
+    transforms.ToTensor()
+])
 
-        if validators.url(url):
-            result = scan_website(url)
+@app.route("/", methods=["GET"])
+def health():
+    return "✅ Flask API is running!"
 
-            if isinstance(result, dict):
-                for vuln, data in result.items():
-                    if isinstance(data, dict) and "status" in data:
-                        if "Possible" in data.get('status', ''):
-                            has_vulnerability = True
-                            no_vulnerability = False  # At least one vulnerability found
-                            break
-                        else:
-                            no_vulnerability = no_vulnerability and "No issues found" in data.get('status', '')
-            else:
-                error = "Unexpected result format."
-        else:
-            error = "Invalid URL. Please enter a valid website URL."
+@app.route("/predict", methods=["POST"])
+def predict():
+    if 'image' not in request.files:
+        return jsonify({"error": "No image provided"}), 400
 
-    return render_template(
-        'index.html',
-        url=url,
-        result=result,
-        error=error,
-        has_vulnerability=has_vulnerability,
-        no_vulnerability=no_vulnerability
-    )
+    file = request.files['image']
+    img = Image.open(file.stream)
+    img_tensor = transform(img).unsqueeze(0)
 
+    with torch.no_grad():
+        output = model(img_tensor)
+        predicted_class = torch.argmax(output, dim=1).item()
 
-@app.route('/vulnerability/<vuln_name>')
-def vulnerability_detail(vuln_name):
-    """Render detailed vulnerability explanation"""
-    explanation = vulnerability_explanations.get(vuln_name, "No details available.")
-    return render_template('vulnerability.html', vuln_name=vuln_name, explanation=explanation)
+    return jsonify({"prediction": predicted_class})
 
-
-if __name__ == '__main__':
-    app.run(debug=True, port=5091)
-
-
-
-
-
-
+if __name__ == "__main__":
+    app.run(debug=True, host="0.0.0.0", port=3000)
