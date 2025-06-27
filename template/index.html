@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vulnerability Scanner</title>
+</head>
+<body>
+    <h2>Scan a Website</h2>
+    <form method="POST">
+        <input type="text" name="url" placeholder="https://example.co>        <button type="submit">Scan</button>
+    </form>
+    {% if result %}
+        <h3>Scan Results for {{ url }}</h3>
+        <pre>{{ result }}</pre>
+    {% endif %}
+</body>
+</html>
+
+
