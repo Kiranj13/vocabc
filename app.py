@@ -1,26 +1,20 @@
-import os
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import torch
+from torchvision import transforms
 from PIL import Image
 from model import get_model
-from torchvision import transforms
+from utils.labels import class_labels
 
 app = Flask(__name__)
+CORS(app)
 
-# Show current working directory
-print("Current working directory:", os.getcwd())
+MODEL_PATH = "model.pth"
 
-# Update this path based on your real model location
-MODEL_PATH = "./model.pth"  # or "models/model.pth", or full path
-
-# Load model safely
-try:
-    model = get_model(num_classes=38)
-    model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
-    model.eval()
-except FileNotFoundError:
-    print(f"❌ ERROR: Model file not found at '{MODEL_PATH}'")
-    exit(1)
+# Load Model
+model = get_model(num_classes=len(class_labels))
+model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
+model.eval()
 
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -28,9 +22,9 @@ transform = transforms.Compose([
     transforms.ToTensor()
 ])
 
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
-    return "✅ Flask API is running!"
+    return "Vocabulary Classifier API is running!"
 
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -38,18 +32,15 @@ def predict():
         return jsonify({"error": "No image provided"}), 400
 
     file = request.files['image']
-    try:
-        image = Image.open(file.stream)
-    except Exception as e:
-        return jsonify({"error": f"Image processing failed: {e}"}), 400
-
+    image = Image.open(file.stream).convert('RGB')
     tensor = transform(image).unsqueeze(0)
 
     with torch.no_grad():
         output = model(tensor)
         prediction = torch.argmax(output, dim=1).item()
 
-    return jsonify({"prediction": prediction})
+    label = class_labels[prediction]
+    return jsonify({"class_index": prediction, "label": label})
 
 if __name__ == "__main__":
     app.run(debug=True, port=3000)
